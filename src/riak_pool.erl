@@ -13,34 +13,12 @@
 %%% limitations under the License.
 
 -module(riak_pool).
--compile({parse_transform, riak_pool_parse_trans}).
 
 -export([
          with_worker/1, with_worker/2, with_worker/3,
          get_worker/0, get_worker/1, free_worker/1
         ]).
 
-%% @TODO try test this optimization.
-%% with_worker(Fun) when is_function(Fun, 1) ->
-%%     {IsFromDict, Worker} =
-%%         case get($riak_pool_worker) of
-%%             undefined ->
-%%                 Worker = riak_pool:get_worker(),
-%%                 put($riak_pool_worker, Worker),
-%%                 {false, Worker};
-%%             Worker ->
-%%                 {true, Worker}
-%%         end,
-%%     try
-%%         Fun(Worker)
-%%     after
-%%         case IsFromDict of
-%%             true  -> pass;
-%%             false ->
-%%                 erase($riak_pool_worker),
-%%                 catch(riak_pool:free_worker(Worker))
-%%         end
-%%     end.
 
 with_worker(Fun)        -> do_with_worker(Fun).
 with_worker(Fun, Args)  -> do_with_worker({Fun, Args}).
