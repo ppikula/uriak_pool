@@ -23,7 +23,7 @@
         ]).
 
 -export([
-         get_pool/0, get_pool/1,
+         get_pool/1,
          register_pool/2,
          unregister_pool/2,
          pools_list/1
@@ -56,19 +56,6 @@ name(ClusterName) ->
 start_link(ClusterName) ->
     gen_server:start_link({local, name(ClusterName)}, ?MODULE,
                           [ClusterName], []).
-
-get_pool()->
-    case application:get_env(riak_cluster) of
-        {ok, ClusterName} ->
-            get_pool(ClusterName);
-        undefined ->
-            case application:get_env(riak_pool, default_cluster) of
-                {ok, ClusterName} ->
-                    get_pool(ClusterName);
-                undefined ->
-                    {error, riak_pool_no_cluster_configured}
-            end
-    end.
 
 get_pool(ClusterName)->
     case gen_server:call(name(ClusterName), get_pool, ?POOL_TIMEOUT) of

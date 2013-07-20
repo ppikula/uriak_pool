@@ -15,21 +15,45 @@
 -module(riak_pool).
 
 -export([
-         with_worker/1, with_worker/2, with_worker/3,
-         get_worker/0, get_worker/1, free_worker/1
+         with_worker/2, with_worker/3, with_worker/4,
+         with_connection/2, with_connection/3, with_connection/4,
+         get_worker/1, free_worker/1,
+         connection/1
         ]).
 
+-type connection() :: pid().
+-type pool_name() :: atom().
+-type worker() :: {pool_name(), connection()}.
 
-with_worker(Fun)        -> do_with_worker(Fun).
-with_worker(Fun, Args)  -> do_with_worker({Fun, Args}).
-with_worker(M, F, Args) -> do_with_worker({M, F, Args}).
+-spec connection(worker()) -> connection().
+connection({_Pool, Conn}) ->
+    Conn.
 
-do_with_worker(Fun) ->
-    case get_worker() of
+with_connection(ClusterName, Fun)        -> do_with_connection(ClusterName, Fun).
+with_connection(ClusterName, Fun, Args)  -> do_with_connection(ClusterName, {Fun, Args}).
+with_connection(ClusterName, M, F, Args) -> do_with_connection(ClusterName, {M, F, Args}).
+
+with_worker(ClusterName, Fun)        -> do_with_worker(ClusterName, Fun).
+with_worker(ClusterName, Fun, Args)  -> do_with_worker(ClusterName, {Fun, Args}).
+with_worker(ClusterName, M, F, Args) -> do_with_worker(ClusterName, {M, F, Args}).
+
+do_with_worker(ClusterName, Fun) ->
+    case get_worker(ClusterName) of
         {error, _W} = Error -> Error;
-        Worker ->
+        {ok, Worker} ->
             try
                 apply_worker_operation(Worker, Fun)
+            after
+                riak_pool:free_worker(Worker)
+            end
+    end.
+
+do_with_connection(ClusterName, Fun) ->
+    case get_worker(ClusterName) of
+        {error, _W} = Error -> Error;
+        {ok, Worker} ->
+            try
+                apply_worker_operation(connection(Worker), Fun)
             after
                 riak_pool:free_worker(Worker)
             end
@@ -43,39 +67,19 @@ apply_worker_operation(Worker, {F, A}) ->
     apply(F, [Worker | A]).
 
 
--type worker() :: {atom(), pid()}.
-
--spec call_worker(atom() | worker(), fun(), [term()]) -> term().
-call_worker({_Pool, WorkerPid}, Function, Args)->
-    apply(riakc_pb_socket , Function, [WorkerPid|Args]);
-call_worker(Pool, Function, Args) when is_atom(Pool) ->
-    case get_worker(Pool) of
-        {error, _W} = Error -> Error;
-        Worker ->
-            try
-                call_worker(Worker, Function, Args)
-            after
-                riak_pool:free_worker(Worker)
-            end
-    end.
-
--spec get_worker() -> worker().
-get_worker()->
-    do_get_worker(riak_pool_balancer:get_pool()).
-
--spec get_worker(AppName :: atom()) -> worker().
-get_worker(AppName)->
-    do_get_worker(riak_pool_balancer:get_pool(AppName)).
+-spec get_worker(ClusterName :: atom()) -> worker().
+get_worker(ClusterName) ->
+    do_get_worker(riak_pool_balancer:get_pool(ClusterName)).
 
 do_get_worker({error, _W} = Error) -> Error;
 do_get_worker(Pool) ->
     case poolboy:checkout(Pool) of
-        Pid when is_pid(Pid) ->
-            {Pool, Pid};
+        Conn when is_pid(Conn) ->
+            {ok, {Pool, Conn}};
         Error ->
             {error, {pool_checkout, Error}}
     end.
 
--spec free_worker(worker())-> ok.
-free_worker({Pool, Worker})->
-    poolboy:checkin(Pool, Worker).
+-spec free_worker(worker()) -> ok.
+free_worker({Pool, Conn}) ->
+    poolboy:checkin(Pool, Conn).
